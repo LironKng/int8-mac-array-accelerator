@@ -6,6 +6,8 @@ Status: Draft (Pre-RTL)
 
 # 1. System Overview
 
+![Architecture Overview](figures/arch_overview.png)
+
 This accelerator implements a 2D systolic INT8 MAC array designed for matrix multiplication workloads.
 
 Primary operation:
@@ -118,6 +120,27 @@ Precise FSM deferred until interface freeze.
 - in_valid
 - start
 - clear
+
+### 6.2.1 Input Scheduling (Skew / Wavefront)
+
+To ensure correct operand alignment across the 2D systolic array,
+inputs must be provided as a skewed wavefront.
+
+At cycle `t` (t = 0, 1, 2, ...), the boundary injections are defined as:
+
+- `A_stream[i] = A[i, k]` where `k = t - i`
+- `B_stream[j] = B[k, j]` where `k = t - j`
+
+If `k` is out of range (`k < 0` or `k >= K`), that lane is treated as invalid for that cycle.
+
+This scheduling guarantees that for any Processing Element `PE(i,j)`,
+the operands corresponding to the same `k` arrive in the same cycle
+after internal horizontal and vertical propagation.
+
+### Assumption (v1.0)
+
+Skew generation is handled externally by the feeder (host/DMA/testbench).
+The accelerator assumes that incoming streams already follow the above schedule.
 
 ## 6.3 Outputs
 
