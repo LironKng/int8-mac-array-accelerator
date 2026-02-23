@@ -50,21 +50,100 @@ Future version may support optional saturation.
 
 # 3. Processing Element (PE)
 
-Each PE contains:
+The Processing Element (PE) is the fundamental compute unit of the systolic array.
+The full accelerator is constructed by tiling PEs in a 2D grid.
 
-- 8×8 signed multiplier
-- 32-bit accumulator register
-- Input forwarding registers
-- Valid propagation logic
+## 3.1 Conceptual Description
 
-### PE Operation (per cycle)
+Each PE performs the following functions:
 
-If valid:
+- 8×8 signed multiplication
+- 32-bit signed accumulation
+- Horizontal forwarding of operand `a`
+- Vertical forwarding of operand `b`
+
+Data movement rules:
+
+- `a` propagates left → right
+- `b` propagates top → bottom
+- Each PE accumulates partial sums corresponding to one output element `C[i][j]`
+
+At a high level, the PE performs:
+
     acc <= acc + (a * b)
 
-Data movement:
-- `a` propagates horizontally (left → right)
-- `b` propagates vertically (top → bottom)
+when active.
+
+## 3.2 Port-Level Specification (v1.0 Frozen)
+
+This section defines the cycle-accurate contract of a single PE.
+
+### 3.2.1 Ports
+
+Clocking:
+- `clk`
+- `rst_n` (active-low reset)
+
+Datapath Inputs:
+- `a_in`  : signed int8 (from left neighbor or boundary register)
+- `b_in`  : signed int8 (from top neighbor or boundary register)
+
+Datapath Outputs:
+- `a_out` : signed int8 (to right neighbor)
+- `b_out` : signed int8 (to bottom neighbor)
+- `acc_out` : signed int32 accumulator value
+
+Control Inputs:
+- `run`       : enables MAC operation
+- `acc_clear` : synchronously clears accumulator
+
+Suggested signal widths:
+- `a_in`, `b_in`, `a_out`, `b_out` → `logic signed [7:0]`
+- `acc_out` → `logic signed [31:0]`
+
+### 3.2.2 Arithmetic Rules
+
+- Multiply: signed int8 × signed int8
+- Product treated as signed 16-bit intermediate
+- Accumulation in signed 32-bit register
+- Two’s complement wrap-around (no saturation in v1.0)
+
+### 3.2.3 Cycle Behavior
+
+On every rising edge of `clk`, when `rst_n = 1`:
+
+Forwarding:
+- `a_out <= a_in`
+- `b_out <= b_in`
+
+Accumulator update (priority order):
+
+1) If `acc_clear = 1`:
+   - `acc <= 0`
+
+2) Else if `run = 1`:
+   - `acc <= acc + (a_in * b_in)`
+
+3) Else:
+   - `acc` holds previous value
+
+The PE performs one MAC per cycle while `run = 1`.
+
+### 3.2.4 Reset Behavior
+
+When `rst_n = 0`:
+
+- `acc` resets to 0
+- `a_out` resets to 0
+- `b_out` resets to 0
+
+No X-propagation is allowed after reset deassertion.
+
+### 3.2.5 Timing Assumptions (v1.0)
+
+- Multiply and accumulate are completed within a single clock cycle.
+- Forwarding between PEs is registered (one-cycle hop).
+- Additional pipelining requires a specification revision.
 
 ---
 
@@ -148,8 +227,6 @@ The accelerator assumes that incoming streams already follow the above schedule.
 - done
 - out_valid
 
----
-
 ## 6.4 Interface v1.0 (Frozen)
 
 The following interface and behavioral assumptions are frozen for v1.0 implementation.
@@ -163,16 +240,12 @@ The following interface and behavioral assumptions are frozen for v1.0 implement
 
   T_total = K + (ROWS - 1) + (COLS - 1)
 
----
-
 ### 6.4.2 Input Valid Policy
 
 - Single global `in_valid` signal
 - No per-lane valid signals in v1.0
 - When a lane is out of range due to skew scheduling,
   the feeder must drive zero on that lane
-
----
 
 ### 6.4.3 Skew Responsibility
 
@@ -181,15 +254,11 @@ The following interface and behavioral assumptions are frozen for v1.0 implement
 - The accelerator assumes incoming A_stream and B_stream
   follow the scheduling rule defined in Section 6.2.1
 
----
-
 ### 6.4.4 Output Policy
 
 - Results are collected in the Output Buffer
 - `out_valid` is asserted when the full C tile is ready
 - `done` is equivalent to `out_valid` in v1.0
-
----
 
 ### 6.4.5 Clocking Assumption
 
@@ -268,8 +337,6 @@ Top-level scan ports may be added in future revisions:
 
 These are placeholders only and are not functionally implemented.
 
----
-
 ## 10.2 Debug & Observability
 
 Optional lightweight debug counters may be added in future versions:
@@ -279,8 +346,6 @@ Optional lightweight debug counters may be added in future versions:
 - Run-completion counter
 
 These are intended for validation and performance visibility.
-
----
 
 ## 10.3 Reset Requirements
 
