@@ -150,6 +150,55 @@ The accelerator assumes that incoming streams already follow the above schedule.
 
 ---
 
+## 6.4 Interface v1.0 (Frozen)
+
+The following interface and behavioral assumptions are frozen for v1.0 implementation.
+
+### 6.4.1 Execution Model
+
+- Fixed execution schedule (no backpressure)
+- No ready/valid handshake in v1.0
+- Inputs are consumed every cycle while `in_valid = 1`
+- Total execution time:
+
+  T_total = K + (ROWS - 1) + (COLS - 1)
+
+---
+
+### 6.4.2 Input Valid Policy
+
+- Single global `in_valid` signal
+- No per-lane valid signals in v1.0
+- When a lane is out of range due to skew scheduling,
+  the feeder must drive zero on that lane
+
+---
+
+### 6.4.3 Skew Responsibility
+
+- Skew (wavefront scheduling) is handled externally by the feeder
+  (Host / DMA / Testbench)
+- The accelerator assumes incoming A_stream and B_stream
+  follow the scheduling rule defined in Section 6.2.1
+
+---
+
+### 6.4.4 Output Policy
+
+- Results are collected in the Output Buffer
+- `out_valid` is asserted when the full C tile is ready
+- `done` is equivalent to `out_valid` in v1.0
+
+---
+
+### 6.4.5 Clocking Assumption
+
+- Single synchronous clock domain
+- No clock gating in v1.0
+- All state elements reset by `rst_n`
+
+---
+
 # 7. Performance Model
 
 Theoretical peak throughput:
