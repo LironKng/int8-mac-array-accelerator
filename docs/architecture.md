@@ -6,7 +6,7 @@ Status: Draft (Pre-RTL)
 
 # 1. System Overview
 
-![Architecture Overview](figures/arch_overview.png)
+![Architecture Overview](figures/architecture_overview.png)
 
 This accelerator implements a 2D systolic INT8 MAC array designed for matrix multiplication workloads.
 

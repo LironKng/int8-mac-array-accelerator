@@ -1,0 +1,16 @@
+# Windows metadata
+*.Zone.Identifier
+
+# Verilator build directory
+obj_dir/
+
+# Generated simulation binaries
+sim_*
+sim.log
+
+# Waveforms
+*.vcd
+*.fst
+
+# Editor junk
+*.swp
