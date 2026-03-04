@@ -1,6 +1,6 @@
 # Architecture Specification — INT8 MAC Array Accelerator
-Version: 0.2  
-Status: Draft (Pre-RTL)
+Version: 1.0
+Status: Implemented
 
 ---
 
@@ -151,8 +151,11 @@ No X-propagation is allowed after reset deassertion.
 
 ## 4.1 Parameters
 
-- ROWS (compile-time parameter)
-- COLS (compile-time parameter)
+| Parameter | Description |
+|-----------|-------------|
+| `ROWS`    | Number of PE rows (compile-time) |
+| `COLS`    | Number of PE columns (compile-time) |
+| `DEPTH`   | Inner dimension K of the matrix multiply (compile-time) |
 
 Total MAC units:
 
@@ -223,9 +226,11 @@ The accelerator assumes that incoming streams already follow the above schedule.
 
 ## 6.3 Outputs
 
-- C_out [ROWS × COLS] (end-of-tile read)
-- done
-- out_valid
+| Signal       | Width              | Description |
+|--------------|--------------------|-------------|
+| `acc_out`    | `[ROWS][COLS][32]` | Accumulator value per PE; valid to read when `out_valid[i][j]` is asserted |
+| `out_valid`  | `[ROWS][COLS]`     | Per-cell pulse: `out_valid[i][j]` is asserted for exactly one cycle when PE(i,j) has finished accumulating |
+| `done`       | `1`                | Sticky flag; asserted when the last PE completes (i.e., when `out_valid[ROWS-1][COLS-1]` fires) and held high until `acc_clear` or deassertion of `run` |
 
 ## 6.4 Interface v1.0 (Frozen)
 
@@ -235,10 +240,12 @@ The following interface and behavioral assumptions are frozen for v1.0 implement
 
 - Fixed execution schedule (no backpressure)
 - No ready/valid handshake in v1.0
-- Inputs are consumed every cycle while `in_valid = 1`
-- Total execution time:
+- Inputs are consumed every cycle while `run = 1`
+- Total execution time (cycles from first input to `done`):
 
-  T_total = K + (ROWS - 1) + (COLS - 1)
+  T_total = DEPTH + (ROWS - 1) + (COLS - 1)
+
+  where `DEPTH` is the compile-time K parameter.
 
 ### 6.4.2 Input Valid Policy
 
@@ -256,9 +263,11 @@ The following interface and behavioral assumptions are frozen for v1.0 implement
 
 ### 6.4.4 Output Policy
 
-- Results are collected in the Output Buffer
-- `out_valid` is asserted when the full C tile is ready
-- `done` is equivalent to `out_valid` in v1.0
+- `out_valid[i][j]` pulses for **one cycle** when PE(i,j) completes its accumulation.
+  The result in `acc_out[i][j]` is valid and stable at that cycle and afterwards (until `acc_clear`).
+- `done` is asserted (and held sticky) on the same cycle that `out_valid[ROWS-1][COLS-1]` fires,
+  indicating the full C tile is available.
+- The host should deassert `run` and optionally pulse `acc_clear` after reading the results.
 
 ### 6.4.5 Clocking Assumption
 

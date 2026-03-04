@@ -19,12 +19,16 @@ module tb_mac_array_2x2;
   logic signed [COLS-1:0][7:0] b_in;
 
   // Outputs
+  logic [ROWS-1:0][COLS-1:0] out_valid;
+  logic done;
   logic signed [ROWS-1:0][COLS-1:0][31:0] acc_out;
+  logic signed [31:0] exp_C [ROWS-1:0][COLS-1:0];
 
   // DUT
   mac_array #(
     .ROWS(ROWS),
-    .COLS(COLS)
+    .COLS(COLS),
+    .DEPTH(K)
   ) dut (
     .clk(clk),
     .rst_n(rst_n),
@@ -32,6 +36,8 @@ module tb_mac_array_2x2;
     .acc_clear(acc_clear),
     .a_in(a_in),
     .b_in(b_in),
+    .out_valid(out_valid),
+    .done(done),
     .acc_out(acc_out)
   );
 
@@ -95,6 +101,12 @@ module tb_mac_array_2x2;
     // operands align as k = t - i - j.
     // ----------------------------
 
+    for (int i = 0; i < ROWS; i++)
+      for (int j = 0; j < COLS; j++) begin
+        exp_C[i][j] = 0;
+        for (int k = 0; k < K; k++)
+          exp_C[i][j] += $signed(A[i][k]) * $signed(B[k][j]);
+      end
     run = 1'b1;
 
     // Run for T cycles where last useful k reaches PE(ROWS-1, COLS-1):
@@ -119,10 +131,13 @@ module tb_mac_array_2x2;
       @(posedge clk);
     end
 
-    // Stop injecting / stop run
-    run = 1'b0;
+    // Stop injecting but keep run until done
     for (int i = 0; i < ROWS; i++) a_in[i] = '0;
     for (int j = 0; j < COLS; j++) b_in[j] = '0;
+
+    do @(posedge clk); while (!done);
+
+    run = 1'b0;
     @(posedge clk);
 
     // Expected C = A*B
@@ -136,4 +151,22 @@ module tb_mac_array_2x2;
     $finish;
   end
 
+  // ------------------------------------------------------------
+  // out_valid checker
+  // ------------------------------------------------------------
+  always_ff @(posedge clk) begin
+    if (run) begin
+      for (int i = 0; i < ROWS; i++) begin
+        for (int j = 0; j < COLS; j++) begin
+          if (out_valid[i][j]) begin
+            if ($signed(acc_out[i][j]) !== $signed(exp_C[i][j])) begin
+              $display("Mismatch @ out_valid[%0d][%0d]: got=%0d exp=%0d",
+                       i, j, $signed(acc_out[i][j]), $signed(exp_C[i][j]));
+              $fatal;
+            end
+          end
+        end
+      end
+    end
+  end
 endmodule

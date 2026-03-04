@@ -3,10 +3,10 @@
 module tb_mac_array_param;
 
   // ---- Parameters for this regression ----
-  localparam int ROWS  = 4;
-  localparam int COLS  = 4;
-  localparam int K     = 4;
-  localparam int NTEST = 100;
+  localparam int ROWS  = 8;
+  localparam int COLS  = 8;
+  localparam int K     = 16;
+  localparam int NTEST = 1000;
 
   // ---- Clock/reset ----
   logic clk = 0;
@@ -20,12 +20,15 @@ module tb_mac_array_param;
   logic signed [ROWS-1:0][7:0] a_in;
   logic signed [COLS-1:0][7:0] b_in;
 
+  logic [ROWS-1:0][COLS-1:0] out_valid;
+  logic done;
   logic signed [ROWS-1:0][COLS-1:0][31:0] acc_out;
 
   // DUT
   mac_array #(
     .ROWS(ROWS),
-    .COLS(COLS)
+    .COLS(COLS),
+    .DEPTH(K)
   ) dut (
     .clk(clk),
     .rst_n(rst_n),
@@ -33,6 +36,8 @@ module tb_mac_array_param;
     .acc_clear(acc_clear),
     .a_in(a_in),
     .b_in(b_in),
+    .out_valid(out_valid),
+    .done(done),
     .acc_out(acc_out)
   );
 
@@ -103,14 +108,19 @@ module tb_mac_array_param;
 
   task automatic run_one_case();
     int t_last;
+    bit done_seen;
+    int done_t;
+
     begin
       // Clear accumulator
       run = 1'b0;
       pulse_clear();
 
       // Drive skewed wavefront for t = 0..t_last
-      run = 1'b1;
-      t_last = (K-1) + (ROWS-1) + (COLS-1);
+      run      = 1'b1;
+      t_last   = (K-1) + (ROWS-1) + (COLS-1);
+      done_seen = 1'b0;
+      done_t    = -1;
 
       for (int t = 0; t <= t_last; t++) begin
         // A boundary: A_in[i] = A[i,k], k=t-i
@@ -128,16 +138,36 @@ module tb_mac_array_param;
         end
 
         @(posedge clk);
+
+        // Latch the first time done pulses
+        if (done && !done_seen) begin
+          done_seen = 1'b1;
+          done_t    = t;
+        end
       end
 
-      // Stop injecting, allow pipeline flush (registered forwarding)
-      run = 1'b0;
+      // Stop injecting, but keep run asserted until done (if not seen yet)
       clear_inputs();
-      repeat (2) @(posedge clk);
+      while (!done_seen) begin
+        @(posedge clk);
+        if (done) begin
+          done_seen = 1'b1;
+          done_t    = t_last + 1; // occurred after injection window
+        end
+      end
+
+      // Timing expectation: done should occur on the last injection cycle
+      if (done_t != t_last) begin
+        $display("DONE timing mismatch: done_t=%0d exp=%0d", done_t, t_last);
+        $fatal;
+      end
+
+      run = 1'b0;
+      @(posedge clk);
 
       expect_all();
     end
-  endtask
+endtask
 
   initial begin
     // Init
@@ -170,4 +200,22 @@ module tb_mac_array_param;
     $finish;
   end
 
+  // ------------------------------------------------------------
+  // out_valid checker
+  // ------------------------------------------------------------
+  always_ff @(posedge clk) begin
+    if (run) begin
+      for (int i = 0; i < ROWS; i++) begin
+        for (int j = 0; j < COLS; j++) begin
+          if (out_valid[i][j]) begin
+            if ($signed(acc_out[i][j]) !== $signed(C_ref[i][j])) begin
+              $display("Mismatch @ out_valid[%0d][%0d]: got=%0d exp=%0d",
+                       i, j, $signed(acc_out[i][j]), $signed(C_ref[i][j]));
+              $fatal;
+            end
+          end
+        end
+      end
+    end
+  end
 endmodule
